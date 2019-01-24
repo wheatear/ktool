@@ -25,23 +25,13 @@ class PsBas(models.Model):
     sub_plan_no = models.BigIntegerField(default=0)
     retry_times = models.IntegerField(default=5)
     notes = models.CharField(max_length=2000)
+    fail_log = models.TextField(max_length=4000)
 
     def __str__(self):
         return 'psId: %d %s %s %d %s' % (self.id, self.bill_id, self.ps_param, self.ps_status, self.fail_reason)
 
     class Meta:
         abstract = True
-
-    @classmethod
-    def setDb_table(Class, tableName):
-        class Meta:
-            db_table = tableName
-
-        attrs = {
-            '__module__': Class.__module__,
-            'Meta': Meta
-        }
-        return type(tableName, (Class,), attrs)
 
 
 class PsTmpl(models.Model):
@@ -59,14 +49,23 @@ class PsTmpl(models.Model):
     class Meta:
         abstract = True
 
-    @classmethod
-    def setDb_table(Class, tableName):
-        class Meta:
-            db_table = tableName
 
-        attrs = {
-            '__module__': Class.__module__,
-            'Meta': Meta
-        }
-        return type(tableName, (Class,), attrs)
+class PsFac(object):
+    _instance = dict()
 
+    def __new__(cls, tb_name, base_cls=PsBas):
+        """        创建类
+        :param base_cls: 类名
+        :param tb_name: 表名
+        :return:
+        """
+        new_cls_name = "%s_To_%s" % (base_cls.__name__, '_'.join(map(lambda x: x.capitalize(), tb_name.split('_'))))
+        # new_cls_name = '_'.join(map(lambda x: x.capitalize(), tb_name.split('_')))
+
+        if new_cls_name not in cls._instance:
+            new_meta_cls = base_cls.Meta
+            new_meta_cls.db_table = tb_name
+            model_cls = type(str(new_cls_name), (base_cls,),
+                             {'__tablename__': tb_name, 'Meta': new_meta_cls, '__module__': cls.__module__})
+            cls._instance[new_cls_name] = model_cls
+        return cls._instance[new_cls_name]

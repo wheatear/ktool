@@ -77,7 +77,7 @@ class CmdFile(object):
         # logger.info(self.aCmdTemplates)
 
 
-class KtPsFFac(object):
+class PsBuilder_FF(object):
     def __init__(self, inFile, cmdTpl):
         # self.main = main
         # self.netType = main.netType
@@ -252,7 +252,7 @@ class KtPsFFac(object):
         return None
 
 
-class TableFac(KtPsFFac):
+class PsBuilder_TF(PsBuilder_FF):
     dSql = {}
     dSql['LOADTMPL'] = 'select ps_id,region_code,bill_id,sub_bill_id,ps_service_type,action_id,ps_param from %s order by create_date,ps_id'
     dSql['LOADTMPLBYPS'] = 'select ps_id,region_code,bill_id,sub_bill_id,ps_service_type,action_id,ps_param from %s where ps_id=:PS_ID'
@@ -453,7 +453,7 @@ class Main(object):
         self.netType = 'KtPs'
         self.netCode = 'kt4'
         logger.info('net type: %s  net code: %s', self.netType, self.netCode)
-        fac = TableFac(self)
+        fac = PsBuilder_TF(self)
         return fac
 
     def makeFileFactory(self):
