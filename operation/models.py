@@ -33,10 +33,15 @@ class PsBas(models.Model):
     class Meta:
         abstract = True
 
+    @classmethod
+    def create(cls, ps_id, bill_id, sub_bill_id, ps_service_type, action_id, pa_param):
+        ps = cls(id=ps_id, bill_id=bill_id, sub_bill_id=sub_bill_id, ps_service_type=ps_service_type, action_id=action_id, pa_param=pa_param)
+        return ps
+
 
 class PsTmpl(models.Model):
     id=models.BigIntegerField(primary_key=True,db_column='ps_id')
-    region_code = models.CharField(max_length=6)
+    # region_code = models.CharField(max_length=6)
     bill_id = models.CharField(max_length=64)
     sub_bill_id = models.CharField(max_length=64)
     ps_service_type = models.CharField(max_length=100)
@@ -49,8 +54,13 @@ class PsTmpl(models.Model):
     class Meta:
         abstract = True
 
+    @classmethod
+    def create(cls, ps_id, bill_id, sub_bill_id, ps_service_type, action_id, pa_param):
+        psTpl = cls(id=ps_id, bill_id=bill_id, sub_bill_id=sub_bill_id, ps_service_type=ps_service_type, action_id=action_id, pa_param=pa_param)
+        return psTpl
 
-class PsFac(object):
+
+class ModelFac(object):
     _instance = dict()
 
     def __new__(cls, tb_name, base_cls=PsBas):
@@ -69,3 +79,14 @@ class PsFac(object):
                              {'__tablename__': tb_name, 'Meta': new_meta_cls, '__module__': cls.__module__})
             cls._instance[new_cls_name] = model_cls
         return cls._instance[new_cls_name]
+
+
+class NumberArea(models.Model):
+    start_number = models.BigIntegerField(primary_key=True,db_column='ps_id')
+    end_number = models.BigIntegerField(primary_key=True, db_column='ps_id')
+    region_code = models.CharField(max_length=6)
+    def __str__(self):
+        return 'psId: %d %d %s' % (self.start_number, self.end_number, self.region_code)
+
+    class Meta:
+        db_table = 'ps_net_number_area'
