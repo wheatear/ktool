@@ -1,6 +1,14 @@
 from django.db import models
 
 # Create your models here.
+class PsIdSeq(models.Model):
+    id = models.BigIntegerField(primary_key=True,db_column='seq.nextval')
+    done_code = models.BigIntegerField(primary_key=True, db_column='doneseq.nextval')
+
+    class Meta:
+        managed = False
+        db_table = 'dual'
+
 
 class PsBas(models.Model):
     id=models.BigIntegerField(primary_key=True,db_column='ps_id')
@@ -32,11 +40,17 @@ class PsBas(models.Model):
 
     class Meta:
         abstract = True
+        managed = False
 
     @classmethod
-    def create(cls, ps_id, bill_id, sub_bill_id, ps_service_type, action_id, pa_param):
-        ps = cls(id=ps_id, bill_id=bill_id, sub_bill_id=sub_bill_id, ps_service_type=ps_service_type, action_id=action_id, pa_param=pa_param)
+    def create(cls, psId, psTmpl):
+        ps = cls(id=psId.id, done_code=psId.id, bill_id=psTmpl.bill_id, sub_bill_id=psTmpl.sub_bill_id, ps_service_type=psTmpl.ps_service_type, action_id=psTmpl.action_id, pa_param=psTmpl.pa_param)
         return ps
+
+    def setPara(self, paras):
+        for i, pa in enumerate(paras):
+            key = self.aParamName[i]
+            self.dParam[key] = pa
 
 
 class PsTmpl(models.Model):
@@ -53,10 +67,11 @@ class PsTmpl(models.Model):
 
     class Meta:
         abstract = True
+        managed = False
 
     @classmethod
-    def create(cls, ps_id, bill_id, sub_bill_id, ps_service_type, action_id, pa_param):
-        psTpl = cls(id=ps_id, bill_id=bill_id, sub_bill_id=sub_bill_id, ps_service_type=ps_service_type, action_id=action_id, pa_param=pa_param)
+    def create(cls, ps_id):
+        psTpl = cls(id=ps_id)
         return psTpl
 
 
@@ -89,4 +104,5 @@ class NumberArea(models.Model):
         return 'psId: %d %d %s' % (self.start_number, self.end_number, self.region_code)
 
     class Meta:
+        managed = False
         db_table = 'ps_net_number_area'

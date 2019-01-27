@@ -10,15 +10,15 @@ import time
 import datetime
 import copy
 import multiprocessing
-import Queue
+import queue
 import signal
 import getopt
 import cx_Oracle as orcl
 import socket
 import glob
 from multiprocessing.managers import BaseManager
-import pexpect
-import pexpect.pxssh
+# import pexpect
+# import pexpect.pxssh
 import base64
 import logging
 import re
@@ -38,7 +38,7 @@ class Conf(object):
     def loadLogLevel(self):
         try:
             fCfg = open(self.cfgFile, 'r')
-        except IOError, e:
+        except IOError as e:
             print('Can not open configuration file %s: %s' % (self.cfgFile, e))
             exit(2)
         for line in fCfg:
@@ -59,7 +59,7 @@ class Conf(object):
         if self.fCfg: return self.fCfg
         try:
             self.fCfg = open(self.cfgFile, 'r')
-        except IOError, e:
+        except IOError as e:
             logging.fatal('can not open configue file %s', self.cfgFile)
             logging.fatal('exit.')
             exit(2)
@@ -74,7 +74,7 @@ class Conf(object):
         #     cfgFile = cli.
         try:
             fCfg = open(self.cfgFile, 'r')
-        except IOError, e:
+        except IOError as e:
             logging.fatal('can not open configue file %s', self.cfgFile)
             logging.fatal('exit.')
             exit(2)
@@ -122,7 +122,7 @@ class Conf(object):
         #     cfgFile = cli.
         try:
             fCfg = open(self.cfgFile, 'r')
-        except IOError, e:
+        except IOError as e:
             logging.fatal('can not open configue file %s', self.cfgFile)
             logging.fatal('exit.')
             exit(2)
@@ -417,7 +417,7 @@ class TcpClt(object):
         try:
             tcpClt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             tcpClt.connect(self.addr)
-        except Exception, e:
+        except Exception as e:
             print 'Can not create socket to %s:%s. %s' % (host, port, e)
             exit(-1)
         self.tcpClt = tcpClt
@@ -1141,7 +1141,7 @@ class DbConn(object):
             # dsn = dsn.replace('SID=', 'SERVICE_NAME=')
             # self.conn = orcl.connect(self.dbUser, self.dbPwd, dsn)
             DbConn.dConn[self.connId] = self.conn
-        except Exception, e:
+        except Exception as e:
             logging.fatal('could not connect to oracle(%s:%s/%s), %s', self.cfg.dbinfo['dbhost'],
                           self.cfg.dbinfo['dbusr'], self.cfg.dbinfo['dbsid'], e)
             exit()
@@ -1152,7 +1152,7 @@ class DbConn(object):
         cur = self.conn.cursor()
         try:
             cur.prepare(sql)
-        except orcl.DatabaseError, e:
+        except orcl.DatabaseError as e:
             logging.error('prepare sql err: %s', sql)
             return None
         return cur
@@ -1161,7 +1161,7 @@ class DbConn(object):
         logging.info('execute cur %s : %s', cur.statement, params)
         try:
             cur.executemany(None, params)
-        except orcl.DatabaseError, e:
+        except orcl.DatabaseError as e:
             logging.error('execute sql err %s:%s ', e, cur.statement)
             return None
         return cur
@@ -1170,7 +1170,7 @@ class DbConn(object):
         logging.debug('fetch %d rows from %s', cur.arraysize, cur.statement)
         try:
             rows = cur.fetchmany()
-        except orcl.DatabaseError, e:
+        except orcl.DatabaseError as e:
             logging.error('fetch sql err %s:%s ', e, cur.statement)
             return None
         return rows
@@ -1179,7 +1179,7 @@ class DbConn(object):
         logging.debug('fethone from %s', cur.statement)
         try:
             row = cur.fetchone()
-        except orcl.DatabaseError, e:
+        except orcl.DatabaseError as e:
             logging.error('execute sql err %s:%s ', e, cur.statement)
             return None
         return row
@@ -1188,7 +1188,7 @@ class DbConn(object):
         logging.debug('fethone from %s', cur.statement)
         try:
             rows = cur.fetchall()
-        except orcl.DatabaseError, e:
+        except orcl.DatabaseError as e:
             logging.error('execute sql err %s:%s ', e, cur.statement)
             return None
         return rows
@@ -1200,7 +1200,7 @@ class DbConn(object):
                 cur.execute(None)
             else:
                 cur.execute(None, params)
-        except orcl.DatabaseError, e:
+        except orcl.DatabaseError as e:
             logging.error('execute sql err %s:%s ', e, cur.statement)
             return None
         return cur
@@ -1563,7 +1563,7 @@ class Main(object):
         self.inFile = None
         try:
             opts, arvs = getopt.getopt(argvs, "t:f:p:r:")
-        except getopt.GetoptError, e:
+        except getopt.GetoptError as e:
             print 'get opt error:%s. %s' % (argvs, e)
             self.usage()
         for opt, arg in opts:
@@ -1628,7 +1628,7 @@ class Main(object):
     def openFile(self, fileName, mode):
         try:
             f = open(fileName, mode)
-        except IOError, e:
+        except IOError as e:
             logging.fatal('open file %s error: %s', fileName, e)
             return None
         return f
