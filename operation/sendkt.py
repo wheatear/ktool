@@ -56,11 +56,12 @@ class CmdFile(object):
 
             if line == '$END$':
                 if self.psEnough(tmplCmd):
-                    # tmplCmd.old_ps_id = i
                     # tmplCmd.ps_model_name = tplName
                     logger.info(tmplCmd)
                     self.aCmdTemplates.append(tmplCmd)
                     tmplCmd = None
+                else:
+                    logger.error('tmpl attr not enough.')
                 continue
             if line == 'KT_REQUEST':
                 i += 1
@@ -100,19 +101,23 @@ class DataFile(object):
     def __init__(self, file):
         self.dataFile = file
         self.lineNum = 0
+        self.doneNum = 0
         self.fIn = None
         self.aFields = []
         self.openData()
         self.loadFildName()
         self.lineCount()
+        self.rspFile = RspFile('%s.rsp' % file)
+        self.rspFile.rspTotal = self.lineNum
 
     def openData(self):
-        self.fIn = main.openFile(self.dataFile, 'r')
+        if not self.fIn:
+            self.fIn = main.openFile(self.dataFile, 'r')
 
     def loadFildName(self):
         fildName = self.fIn.readline()
         logger.info('field: %s', fildName)
-        fildName = fildName.upper()
+        fildName = fildName.lower()
         self.aFields = fildName.split()
 
     def lineCount(self):
@@ -126,7 +131,7 @@ class DataFile(object):
         self.fIn.seek()
         self.fIn.readline()
 
-    def nextLine(self):
+    def next(self):
         for line in self.fIn:
             line = line.strip()
             if len(line) == 0:
@@ -137,16 +142,20 @@ class DataFile(object):
             dPsData = {}
             for i,fild in enumerate(self.aFields):
                 dPsData[fild] = aPara[i]
+            self.doneNum += 1
             return dPsData
         return False
 
     def close(self):
-        self.fIn.close()
+        if self.fIn:
+            self.fIn.close()
 
 
 class RspFile(object):
     def __init__(self, file):
         self.rspFile = file
+        self.rspTotal = 0
+        self.rspDone = 0
         self.fOut = None
 
     def openRsp(self):
@@ -156,24 +165,35 @@ class RspFile(object):
         if not self.fOut:
             self.openRsp()
         self.fOut.write('%s%s', line, os.linesep)
+        self.rspDone += 1
 
     def close(self):
         if self.fOut:
             self.fOut.close()
+
+    def back(self):
+        if self.fOut:
+            self.fOut.close()
+        baseFile = os.path.basename(self.rspFile)
+        bkFile = os.path.join(main.dirBack, baseFile)
+        outFile = os.path.join(main.dirOut, baseFile)
+        shutil.copy(self.rspFile, bkFile)
+        os.rename(self.rspFile, outFile)
 
 
 class PsBuilder_FF(object):
     def __init__(self):
         self.inFile = main.inFile
         self.cmdTpl = main.cmdTpl
+        self.cmdRsp = None
 
         self.aDataFile = []
 
         # self.aFiles = []
-        self.dFiles = {}
+        # self.dFiles = {}
         # self.orderDs = None
-        self.aNetInfo = []
-        self.dNetClient = {}
+        # self.aNetInfo = []
+        # self.dNetClient = {}
         # self.respName = '%s.rsp' % os.path.basename(self.main.outFile)
         # self.respFullName = os.path.join(self.main.dirOutput, self.respName)
         self.resp = None
@@ -195,55 +215,26 @@ class PsBuilder_FF(object):
                 bkFile = os.path.join(main.dirBack, baseFile)
                 shutil.copy(fi, wkFile)
                 os.rename(fi, bkFile)
-                self.aDataFile.append(DataFile(wkFile))
-                fileRsp = '%s.rsp' % baseFile
+                dataFile = DataFile(wkFile)
+                if len(self.aCmdTemplates)>0:
+                    dataFile.rspFile.rspTotal *= len(self.aCmdTemplates)
+                else:
+                    logger.error('no cmd template, exit.')
+                    exit(-1)
+                self.aDataFile.append(dataFile)
+                # fileRsp = '%s.rsp' % baseFile
                 # self.dFiles[fi] = []
-
         else:
             logger.info('no data file')
-
-    def lineCount(self):
-        if len(self.aFiles) == 0:
-            fileBase = self.cmdTpl
-            fileRsp = '%s.rsp' % self.cmdTpl
-            fileWkRsp = os.path.join(main.dirWork, fileRsp)
-            fWkRsp = main.openFile(fileWkRsp, 'w')
-            fileOutRsp = os.path.join(main.dirOut, fileRsp)
-            count = 1
-            self.dFiles[fileBase] = [fileBase, count, self.aCmdTemplates, fileWkRsp, fWkRsp, fileOutRsp]
-            logger.info('file: %s %d', fileBase, count)
-            return self.dFiles
-        for fi in self.aFiles:
-            fileBase = os.path.basename(fi)
-            nameBody,nameExt = os.path.splitext(fileBase)
-            # cmdTpl = self.dFildCmdMap[nameExt]
-            fileBack = os.path.join(main.dirBack, fileBase)
-            shutil.copy(fi, fileBack)
-            fileRsp = '%s.rsp' % fileBase
-            fileWkRsp = os.path.join(main.dirWork, fileRsp)
-            fWkRsp = self.main.openFile(fileWkRsp, 'w')
-            fileOutRsp = os.path.join(main.dirOut, fileRsp)
-
-            count = -1
-            for count, line in enumerate(open(fi, 'rU')):
-                pass
-            # count += 1
-            self.dFiles[fi] = [fileBase,count, self.aCmdTemplates, fileWkRsp, fWkRsp, fileOutRsp]
-            logger.info('file: %s %d', fi, count)
-            # self.dFileSize[fi] = count
-        return self.dFiles
+            baseFile = os.path.basename(self.cmdTpl)
+            cmdRspFile = os.path.join(main.dirWork, baseFile)
+            self.cmdRsp = RspFile(cmdRspFile)
+            self.cmdRsp.rspTotal = len(self.aCmdTemplates)
 
     def loadCmd(self):
         logger.info('loading cmd template %s', self.cmdTpl)
         tmplFile = CmdFile(self.cmdTpl)
         self.aCmdTemplates = tmplFile.aCmdTemplates
-
-
-    # def makeKtClient(self, ktName):
-    #     conn = self.makeConn(ktName)
-    #     kt = KtClient(conn)
-    #     kt.aCmdTemplates = self.aCmdTemplates
-    #     return kt
 
     def buildQueue(self):
         self.orderQueue = queue.Queue(1000)
@@ -257,31 +248,18 @@ class PsBuilder_FF(object):
         recver = KtRecver(self)
         return recver
 
-    # def openDs(self):
-    #     if self.orderDs: return self.orderDs
-    #     logger.info('open ds %s', self.orderDsName)
-    #     self.orderDs = self.main.openFile(self.orderDsName, 'r')
-    #     if self.orderDs is None:
-    #         logger.fatal('Can not open orderDs file %s.', self.orderDsName)
+    # def openRsp(self):
+    #     if self.resp: return self.resp
+    #     self.resp = self.main.openFile(self.respFullName, 'a')
+    #     logger.info('open response file: %s', self.respName)
+    #     if self.resp is None:
+    #         logger.fatal('Can not open response file %s.', self.respName)
     #         exit(2)
-    #     return self.orderDs
+    #     return self.resp
     #
-    # def closeDs(self):
-    #     if self.orderDs:
-    #         self.orderDs.close()
-
-    def openRsp(self):
-        if self.resp: return self.resp
-        self.resp = self.main.openFile(self.respFullName, 'a')
-        logger.info('open response file: %s', self.respName)
-        if self.resp is None:
-            logger.fatal('Can not open response file %s.', self.respName)
-            exit(2)
-        return self.resp
-
-    def saveResp(self, order):
-        for rsp in order.aResp:
-            self.resp.write('%s %s%s' % (order.dParam['BILL_ID'], rsp, os.linesep))
+    # def saveResp(self, order):
+    #     for rsp in order.aResp:
+    #         self.resp.write('%s %s%s' % (order.dParam['BILL_ID'], rsp, os.linesep))
 
     # def makeOrderFildName(self):
     #     fildName = self.orderDs.readline()
@@ -289,26 +267,26 @@ class PsBuilder_FF(object):
     #     fildName = fildName.upper()
     #     self.aFildName = fildName.split()
 
-    def makeOrder(self):
-        orderClassName = '%sOrder' % self.netType
-        logger.debug('load order %s.', orderClassName)
-        for line in self.orderDs:
-            line = line.strip()
-            logger.debug(line)
-            if len(line) == 0:
-                continue
-            if line[0] == '#':
-                continue
-            aParams = line.split()
-
-            order = createInstance(self.main.appNameBody, orderClassName)
-            order.setParaName(self.aFildName)
-            order.setPara(aParams)
-            logger.debug('order param: %s', order.dParam)
-            # netCode = self.aNetInfo[0]['NetCode']
-            order.net = self.dNetClient[self.netCode]
-            return order
-        return None
+    # def makeOrder(self):
+    #     orderClassName = '%sOrder' % self.netType
+    #     logger.debug('load order %s.', orderClassName)
+    #     for line in self.orderDs:
+    #         line = line.strip()
+    #         logger.debug(line)
+    #         if len(line) == 0:
+    #             continue
+    #         if line[0] == '#':
+    #             continue
+    #         aParams = line.split()
+    #
+    #         order = createInstance(self.main.appNameBody, orderClassName)
+    #         order.setParaName(self.aFildName)
+    #         order.setPara(aParams)
+    #         logger.debug('order param: %s', order.dParam)
+    #         # netCode = self.aNetInfo[0]['NetCode']
+    #         order.net = self.dNetClient[self.netCode]
+    #         return order
+    #     return None
 
     def loadNumberArea(self):
         logger.info('load number area from ps_net_number_area')
@@ -322,8 +300,6 @@ class PsBuilder_FF(object):
                 self.dNumberArea[nk] = regionCode
                 start += 10000
         logger.info('loaded %d num', len(self.dNumberArea))
-
-
 
 
 class PsBuilder_TF(PsBuilder_FF):
@@ -349,7 +325,7 @@ class KtSender(threading.Thread):
         self.aDataFile = builder.aDataFile
 
         # self.aFiles = builder.aFiles
-        self.dFiles = builder.dFiles
+        # self.dFiles = builder.dFiles
         # self.kt = builder.makeKtClient('SENDER')
         self.orderQueue = builder.orderQueue
         # self.curPsid = self.conn.prepareSql(self.sqlPsid)
@@ -365,7 +341,7 @@ class KtSender(threading.Thread):
         if len(self.aDataFile) == 0:
             logging.info('no data file, redo template.')
             for tpl in aTmpl:
-                billArea = tpl.bill_id // 10000
+                billArea = int(tpl.bill_id) // 10000
                 regionCode = self.builder.dNumberArea[billArea]
                 tableName = 'i_provision_%s' % regionCode
                 Ps = ModelFac(tableName, PsBas)
@@ -374,18 +350,14 @@ class KtSender(threading.Thread):
                 ps.save()
                 self.orderQueue.put(ps, 1)
             return
-
         for fi in self.aDataFile:
-            # fileBody, fileExt = os.path.splitext(fi)
-            # aCmdTpl = self.builder.dFildCmdMap[fileExt]
             logging.info('process file %s', fi.dataFile)
-
             i = 0
             aFieldName = fi.aFields
-            dPsData = fi.nextLine()
+            dPsData = fi.next()
             while (dPsData):
                 if len(dPsData) < 1:
-                    continue
+                    break
                 i += 1
                 if i > 199:
                     i = 0
@@ -394,7 +366,7 @@ class KtSender(threading.Thread):
                         logging.info('order queue size exceed 1000, sleep 10')
                         time.sleep(10)
                 logging.debug(dPsData)
-                billId = dPsData['BILL_ID']
+                billId = int(dPsData['bill_id'])
                 billArea = billId // 10000
                 regionCode = self.builder.dNumberArea[billArea]
                 tableName = 'i_provision_%s' % regionCode
@@ -403,47 +375,42 @@ class KtSender(threading.Thread):
                     psId = PsIdSeq.objects.get()
                     ps = Ps.create(psId, tpl)
                     for pa in dPsData:
-                        ps.pa = dPsData[pa]
+                        if pa in ps.__dict__:
+                            ps.pa = dPsData[pa]
                     ps.save()
+                    ps.file = fi
                     self.orderQueue.put(ps, 1)
-                dPsData = fi.nextLine()
+                dPsData = fi.next()
             logging.info('read %s complete, and delete.', fi)
             os.remove(fi)
+        logger.info('sended all ps.')
 
 
 class KtRecver(threading.Thread):
     def __init__(self, builder):
         threading.Thread.__init__(self)
         self.builder = builder
-        self.aFiles = builder.aFiles
-        self.dFiles = builder.dFiles
+        # self.aFiles = builder.aFiles
+        # self.dFiles = builder.dFiles
         # self.kt = builder.makeKtClient('RECVER')
         self.orderQueue = builder.orderQueue
-        self.dOrder = {}
-        self.doneOrders = {}
+        # self.dOrder = {}
+        # self.doneOrders = {}
         # self.pattImsi = re.compile(r'IMSI1=(\d{15});')
 
     def run(self):
-        if len(self.dFiles) == 0:
-            logging.info('no file')
-            return
-        for file in self.dFiles:
-            self.doneOrders[file] = 0
         time.sleep(10)
         emptyCounter = 0
         i = 0
         while 1:
             order = None
-            if len(self.dFiles) == 0:
-                logging.info('all files completed.')
-                break
             if self.orderQueue.empty():
                 emptyCounter += 1
                 if emptyCounter > 20:
                     logging.info('exceed 20 times empty, exit.')
-                    for file in self.dFiles.keys():
-                        aFileInfo = self.dFiles.pop(file)
-                        self.dealFile(aFileInfo)
+                    # for file in self.dFiles.keys():
+                    #     aFileInfo = self.dFiles.pop(file)
+                    #     self.dealFile(aFileInfo)
                     break
                 time.sleep(30)
                 continue
@@ -451,34 +418,31 @@ class KtRecver(threading.Thread):
             if i > 199:
                 i = 0
                 time.sleep(3)
-            order = self.orderQueue.get(1)
-            logging.debug('get order %s %d from queue', order.aReq[0]['BILL_ID'], order.aReq[0]['PS_ID'])
-            self.kt.recvOrder(order)
-            if len(order.aWaitPs) > 0:
-                self.orderQueue.put(order, 1)
+            ps = self.orderQueue.get(1)
+            logging.debug('get ps %s %d from queue', ps.bill_id, ps.id)
+            billArea = ps.bill_id // 10000
+            regionCode = self.builder.dNumberArea[billArea]
+            createDate = ps.create_date
+            tableMon = createDate.strftime('%Y%m')
+            tableName = 'ps_provision_his_%s_%s' % (regionCode,tableMon)
+            Ps = ModelFac(tableName, PsBas)
+            psHis = Ps.objects.filter(id=ps.id)
+            if len(psHis) == 0:
+                self.orderQueue.put(ps, 1)
                 continue
-            self.makeRsp(order)
-            inFile = order.file
-            self.doneOrders[inFile] += 1
-            logging.debug('done: %d; all: %d', self.doneOrders[inFile], self.dFiles[inFile][1])
-            if self.doneOrders[inFile] == self.dFiles[inFile][1]:
-                logging.info('file %s completed after process %d lines.', inFile, self.doneOrders[inFile])
-                aFileInfo = self.dFiles.pop(inFile)
-                self.dealFile(aFileInfo)
-            time.sleep(1)
+            strRsp = '%d %d %s %s' % (psHis.id, psHis.ps_status, psHis.bill_id, psHis.fail_reason)
+            rspFile = None
+            if 'file' in psHis.__dict__:
+                rspFile = ps.file.rspFile
+            else:
+                rspFile = self.builder.cmdRsp
+            rspFile.saveRsp(strRsp)
+            if rspFile.rspTotal == rspFile.rspDone:
+                logger.info('rspfile %s completed,', rspFile.rspFile)
+                rspFile.back()
 
-    def checkSub(self, orderRsp, inFile):
-        rsp = orderRsp[3]
-        m = None
-        m = self.pattImsi.search(rsp)
-        fp = None
-        if m:
-            logging.debug(m.groups())
-            fp = self.dFiles[inFile][6]
-        else:
-            logging.debug('no find %s', orderRsp[0])
-            fp = self.dFiles[inFile][7]
-        return fp
+            time.sleep(1)
+        logger.info('all completed.')
 
     def makeRsp(self, order):
         inFile = order.file
@@ -493,17 +457,6 @@ class KtRecver(threading.Thread):
             fp.write('%s%s' % (sRsp, os.linesep))
         # fp.write('%s%s' % (sRsp, os.linesep))
         logging.debug(sRsp)
-
-    def dealFile(self, aFileInfo):
-        # self.dFiles[fi] = [fileBase,count, cmdTpl, fileWkRsp, fWkRsp, fileOutRsp]
-        fWkRsp = aFileInfo[4]
-        fWkRsp.close()
-        fileWkRsp = aFileInfo[3]
-        fileOutRsp = aFileInfo[5]
-        fileBkRsp = os.path.join(self.main.dirBack, os.path.basename(fileWkRsp))
-        shutil.copy(fileWkRsp, fileBkRsp)
-        os.rename(fileWkRsp, fileOutRsp)
-        logging.info('%s complete', aFileInfo[0])
 
 
 class Director(object):
@@ -520,14 +473,13 @@ class Director(object):
 
     def start(self):
         self.makeBuilder()
+        self.builder.loadCmd()
         if self.builder.inFile is not None:
             # print(self.factory.inFile)
             logger.info('find in files')
             self.builder.findFile()
-            self.builder.lineCount()
-        self.builder.loadCmd()
-        # self.factory.buildKtClient()
-        queue = self.builder.buildQueue()
+        self.builder.loadNumberArea()
+        self.builder.buildQueue()
         sender = self.builder.buildKtSender()
         recver = self.builder.buildKtRecver()
 
@@ -574,7 +526,7 @@ class Main(object):
         try:
             opts, arvs = getopt.getopt(argvs, "t:f:p:")
         except getopt.GetoptError as e:
-            print 'get opt error:%s. %s' % (argvs, e)
+            print('get opt error:%s. %s' % (argvs, e))
             self.usage()
         for opt, arg in opts:
             if opt == '-t':
@@ -589,15 +541,7 @@ class Main(object):
             self.inFile = arvs[0]
 
     def parseWorkEnv(self):
-        if self.dirBin=='' or self.dirBin=='.':
-            self.dirBin = '.'
-            self.dirApp = '..'
-        else:
-            dirApp, dirBinName = os.path.split(self.dirBin)
-            if dirApp=='':
-                self.dirApp = '.'
-            else:
-                self.dirApp = dirApp
+        self.dirApp = os.path.dirname(pathname)
         self.dirLog = os.path.join(self.dirApp, 'log')
         # self.dirCfg = os.path.join(self.dirApp, 'config')
         # self.dirCfg = self.dirBin
@@ -608,11 +552,12 @@ class Main(object):
         self.dirWork = os.path.join(self.dirApp, 'work')
         self.dirTpl = os.path.join(self.dirApp, 'template')
 
+        logger.info('input dir: %s', self.dirIn)
+
         # cfgName = '%s.cfg' % self.appNameBody
         logName = '%s_%s.log' % (self.appNameBody, self.today)
         logPre = '%s_%s' % (self.appNameBody, self.today)
         outName = '%s_%s' % (self.appNameBody, self.nowtime)
-        # tplName = '*.tpl'
         # self.cfgFile = os.path.join(self.dirCfg, cfgName)
         self.logFile = os.path.join(self.dirLog, logName)
         # self.tplFile = os.path.join(self.dirTpl, self.cmdTpl)
@@ -624,19 +569,19 @@ class Main(object):
             self.cmdTpl = os.path.join(self.dirTpl, self.cmdTpl)
 
     def usage(self):
-        print "Usage: %s [-t|f orderTmpl] [-p psid] [datafile]" % self.appName
+        print("Usage: %s [-t|f orderTmpl] [-p psid] [datafile]" % self.appName)
         print('option:')
-        print(u'-t orderTmpl : 指定模板表orderTmpl，默认表是ps_model_summary'.encode('gbk'))
-        print(u'-f orderTmpl : 指定模板文件orderTmpl'.encode('gbk'))
-        print(u'-p psid :      取模板表中ps_id为psid的记录为模板，没有这个参数取整个表为模板'.encode('gbk'))
-        print(u'datafile :     数据文件，取里面的号码替换掉模板中的号码发开通'.encode('gbk'))
-        print "example:"
-        print "\t%s pccnum" % (self.appName)
-        print "\t%s -t ps_model_summary" % (self.appName)
-        print "\t%s -t ps_model_summary -p 2451845353" % (self.appName)
-        print "\t%s -t ps_model_summary -p 2451845353 pccnum" % (self.appName)
-        print "\t%s -f kt_hlr" % (self.appName)
-        print "\t%s -f kt_hlr pccnum" % (self.appName)
+        print('-t orderTmpl : 指定模板表orderTmpl，默认表是ps_model_summary')
+        print('-f orderTmpl : 指定模板文件orderTmpl')
+        print('-p psid :      取模板表中ps_id为psid的记录为模板，没有这个参数取整个表为模板')
+        print('datafile :     数据文件，取里面的号码替换掉模板中的号码发开通')
+        print("example:")
+        print("\t%s pccnum" % (self.appName))
+        print("\t%s -t ps_model_summary" % (self.appName))
+        print("\t%s -t ps_model_summary -p 2451845353" % (self.appName))
+        print("\t%s -t ps_model_summary -p 2451845353 pccnum" % (self.appName))
+        print("\t%s -f kt_hlr" % (self.appName))
+        print("\t%s -f kt_hlr pccnum" % (self.appName))
         exit(1)
 
     def openFile(self, fileName, mode):
@@ -647,22 +592,11 @@ class Main(object):
             return None
         return f
 
-    # def connectServer(self):
-    #     if self.conn is not None: return self.conn
-    #     self.conn = DbConn('main', self.cfg.dbinfo)
-    #     self.conn.connectServer()
-    #     return self.conn
-
-    # def getConn(self, connId):
-    #     conn = DbConn(connId, self.cfg.dbinfo)
-    #     return conn
-
     def start(self):
         self.checkArgv()
         self.parseWorkEnv()
 
         logger.info('infile: %s' % self.inFile)
-
         director = Director()
         director.start()
 
@@ -681,6 +615,6 @@ if __name__ == "__main__":
     # p2453752950 = PsHis1001901.objects.get(id=2453752950)
     # print(p2453752950)
     main = Main()
-    logger.info('%s starting...' % main.appName)
+    logger.info('%s starting...', os.path.basename(__file__))
     main.start()
-    logger.info('%s complete.', main.appName)
+    logger.info('%s complete.', os.path.basename(__file__))

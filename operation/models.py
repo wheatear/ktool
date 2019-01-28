@@ -2,8 +2,8 @@ from django.db import models
 
 # Create your models here.
 class PsIdSeq(models.Model):
-    id = models.BigIntegerField(primary_key=True,db_column='seq.nextval')
-    done_code = models.BigIntegerField(primary_key=True, db_column='doneseq.nextval')
+    id = models.BigIntegerField(primary_key=True,db_column='seq_ps_id.nextval')
+    done_code = models.BigIntegerField(primary_key=True, db_column='seq_ps_donecode.nextval')
 
     class Meta:
         managed = False
@@ -97,8 +97,8 @@ class ModelFac(object):
 
 
 class NumberArea(models.Model):
-    start_number = models.BigIntegerField(primary_key=True,db_column='ps_id')
-    end_number = models.BigIntegerField(primary_key=True, db_column='ps_id')
+    start_number = models.BigIntegerField(primary_key=True)
+    end_number = models.BigIntegerField(primary_key=True)
     region_code = models.CharField(max_length=6)
     def __str__(self):
         return 'psId: %d %d %s' % (self.start_number, self.end_number, self.region_code)
