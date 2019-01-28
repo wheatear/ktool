@@ -345,7 +345,8 @@ class KtSender(threading.Thread):
                 regionCode = self.builder.dNumberArea[billArea]
                 tableName = 'i_provision_%s' % regionCode
                 Ps = ModelFac(tableName, PsBas)
-                psId = PsIdSeq.objects.get()
+                psId = PsIdSeq.objects.raw('select seq_ps_id.nextval as ps_id,seq_ps_donecode.nextval from dual')[0]
+                logger.debug('ps_id: %d', psId.id)
                 ps = Ps.create(psId, tpl)
                 ps.save()
                 self.orderQueue.put(ps, 1)
@@ -372,7 +373,7 @@ class KtSender(threading.Thread):
                 tableName = 'i_provision_%s' % regionCode
                 Ps = ModelFac(tableName, PsBas)
                 for tpl in self.builder.aCmdTemplates:
-                    psId = PsIdSeq.objects.get()
+                    psId = PsIdSeq.objects.raw('select seq_ps_id.nextval as ps_id,seq_ps_donecode.nextval from dual')[0]
                     ps = Ps.create(psId, tpl)
                     for pa in dPsData:
                         if pa in ps.__dict__:
@@ -420,7 +421,7 @@ class KtRecver(threading.Thread):
                 time.sleep(3)
             ps = self.orderQueue.get(1)
             logging.debug('get ps %s %d from queue', ps.bill_id, ps.id)
-            billArea = ps.bill_id // 10000
+            billArea = int(ps.bill_id) // 10000
             regionCode = self.builder.dNumberArea[billArea]
             createDate = ps.create_date
             tableMon = createDate.strftime('%Y%m')

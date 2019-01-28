@@ -2,7 +2,7 @@ from django.db import models
 
 # Create your models here.
 class PsIdSeq(models.Model):
-    id = models.BigIntegerField(primary_key=True,db_column='seq_ps_id.nextval')
+    id = models.BigIntegerField(primary_key=True,db_column='ps_id')
     done_code = models.BigIntegerField(primary_key=True, db_column='seq_ps_donecode.nextval')
 
     class Meta:
@@ -44,7 +44,7 @@ class PsBas(models.Model):
 
     @classmethod
     def create(cls, psId, psTmpl):
-        ps = cls(id=psId.id, done_code=psId.id, bill_id=psTmpl.bill_id, sub_bill_id=psTmpl.sub_bill_id, ps_service_type=psTmpl.ps_service_type, action_id=psTmpl.action_id, pa_param=psTmpl.pa_param)
+        ps = cls(id=psId.id, done_code=psId.id, bill_id=psTmpl.bill_id, sub_bill_id=psTmpl.sub_bill_id, ps_service_type=psTmpl.ps_service_type, action_id=psTmpl.action_id, ps_param=psTmpl.ps_param)
         return ps
 
     def setPara(self, paras):
