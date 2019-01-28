@@ -226,7 +226,7 @@ class PsBuilder_FF(object):
                 # self.dFiles[fi] = []
         else:
             logger.info('no data file')
-            baseFile = os.path.basename(self.cmdTpl)
+            baseFile = '%s.rsp' % os.path.basename(self.cmdTpl)
             cmdRspFile = os.path.join(main.dirWork, baseFile)
             self.cmdRsp = RspFile(cmdRspFile)
             self.cmdRsp.rspTotal = len(self.aCmdTemplates)
@@ -308,7 +308,7 @@ class PsBuilder_TF(PsBuilder_FF):
         self.cmdTab = main.cmdTpl
 
     def loadCmd(self):
-        logger.info('load cmd template.')
+        logger.info('load cmd template from table %s.', self.cmdTab)
         NewTmpl = ModelFac(self.cmdTab, PsTmpl)
         # para = None
         if main.tmplId:
