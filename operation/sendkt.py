@@ -128,7 +128,7 @@ class DataFile(object):
             if line[0] == '#':
                 continue
             self.lineNum += 1
-        self.fIn.seek()
+        self.fIn.seek(0,0)
         self.fIn.readline()
 
     def next(self):
@@ -150,6 +150,11 @@ class DataFile(object):
         if self.fIn:
             self.fIn.close()
 
+    def remove(self):
+        if self.fIn:
+            self.close()
+        os.remove(self.dataFile)
+
 
 class RspFile(object):
     def __init__(self, file):
@@ -164,7 +169,7 @@ class RspFile(object):
     def saveRsp(self, line):
         if not self.fOut:
             self.openRsp()
-        self.fOut.write('%s%s', line, os.linesep)
+        self.fOut.write('%s%s' % (line, os.linesep))
         self.rspDone += 1
 
     def close(self):
@@ -301,6 +306,14 @@ class PsBuilder_FF(object):
                 start += 10000
         logger.info('loaded %d num', len(self.dNumberArea))
 
+    def getRegionCode(self, billId):
+        try:
+            billArea = int(billId) // 10000
+            regionCode = self.dNumberArea[billArea]
+        except Exception as e:
+            regionCode = '100'
+        return regionCode
+
 
 class PsBuilder_TF(PsBuilder_FF):
     def __init__(self):
@@ -341,18 +354,20 @@ class KtSender(threading.Thread):
         if len(self.aDataFile) == 0:
             logging.info('no data file, redo template.')
             for tpl in aTmpl:
-                billArea = int(tpl.bill_id) // 10000
-                regionCode = self.builder.dNumberArea[billArea]
+                regionCode = self.builder.getRegionCode(tpl.bill_id)
                 tableName = 'i_provision_%s' % regionCode
                 Ps = ModelFac(tableName, PsBas)
                 psId = PsIdSeq.objects.raw('select seq_ps_id.nextval as ps_id,seq_ps_donecode.nextval from dual')[0]
-                logger.debug('ps_id: %d', psId.id)
+                logger.debug('send ps_id: %d', psId.id)
                 ps = Ps.create(psId, tpl)
+                ps.region_code = regionCode
                 ps.save()
                 self.orderQueue.put(ps, 1)
+            self.orderQueue.put('all completed', 1)
             return
         for fi in self.aDataFile:
             logging.info('process file %s', fi.dataFile)
+            logger.debug('tmpl total: %d', len(self.builder.aCmdTemplates))
             i = 0
             aFieldName = fi.aFields
             dPsData = fi.next()
@@ -367,24 +382,37 @@ class KtSender(threading.Thread):
                         logging.info('order queue size exceed 1000, sleep 10')
                         time.sleep(10)
                 logging.debug(dPsData)
-                billId = int(dPsData['bill_id'])
-                billArea = billId // 10000
-                regionCode = self.builder.dNumberArea[billArea]
+                regionCode = self.builder.getRegionCode(dPsData['bill_id'])
                 tableName = 'i_provision_%s' % regionCode
                 Ps = ModelFac(tableName, PsBas)
+                logger.debug('data: %s', dPsData)
                 for tpl in self.builder.aCmdTemplates:
                     psId = PsIdSeq.objects.raw('select seq_ps_id.nextval as ps_id,seq_ps_donecode.nextval from dual')[0]
                     ps = Ps.create(psId, tpl)
+                    logger.debug('send ps_id: %d', psId.id)
+                    psParam = ps.ps_param
                     for pa in dPsData:
+                        # logger.debug('pa: %s; dict: %s', pa, ps.__dict__)
                         if pa in ps.__dict__:
-                            ps.pa = dPsData[pa]
+                            ps.__dict__[pa] = dPsData[pa]
+
+                        pattern = r'\b%s=(.*?);' % pa.upper()
+                        # logger.debug('pattern: %s  psParam: %s', pattern, psParam)
+                        m = re.search(pattern, psParam)
+                        # logger.debug('m: %s', m)
+                        if m is not None:
+                            rpl = '%s=%s;' % (pa.upper(), dPsData[pa])
+                            ps.ps_param = psParam.replace(m.group(), rpl)
+                    ps.region_code = regionCode
+                    logger.debug('%d %s %s %s', ps.id, ps.bill_id, ps.sub_bill_id, ps.ps_param)
                     ps.save()
                     ps.file = fi
                     self.orderQueue.put(ps, 1)
                 dPsData = fi.next()
             logging.info('read %s complete, and delete.', fi)
-            os.remove(fi)
+            fi.remove()
         logger.info('sended all ps.')
+        self.orderQueue.put('all completed', 1)
 
 
 class KtRecver(threading.Thread):
@@ -395,6 +423,7 @@ class KtRecver(threading.Thread):
         # self.dFiles = builder.dFiles
         # self.kt = builder.makeKtClient('RECVER')
         self.orderQueue = builder.orderQueue
+        self.waitQueue = queue.Queue(5000)
         # self.dOrder = {}
         # self.doneOrders = {}
         # self.pattImsi = re.compile(r'IMSI1=(\d{15});')
@@ -404,7 +433,6 @@ class KtRecver(threading.Thread):
         emptyCounter = 0
         i = 0
         while 1:
-            order = None
             if self.orderQueue.empty():
                 emptyCounter += 1
                 if emptyCounter > 20:
@@ -420,30 +448,62 @@ class KtRecver(threading.Thread):
                 i = 0
                 time.sleep(3)
             ps = self.orderQueue.get(1)
-            logging.debug('get ps %s %d from queue', ps.bill_id, ps.id)
-            billArea = int(ps.bill_id) // 10000
-            regionCode = self.builder.dNumberArea[billArea]
+            if ps == 'all completed':
+                break
+            logger.debug('get ps %s %d from queue', ps.bill_id, ps.id)
+            regionCode = ps.region_code
             createDate = ps.create_date
             tableMon = createDate.strftime('%Y%m')
             tableName = 'ps_provision_his_%s_%s' % (regionCode,tableMon)
             Ps = ModelFac(tableName, PsBas)
             psHis = Ps.objects.filter(id=ps.id)
             if len(psHis) == 0:
-                self.orderQueue.put(ps, 1)
+                logger.info('ps %s not end. do next', ps.id)
+                if self.waitQueue.full():
+                    logger.info('wait queue is full, process wait queue.')
+                    self.doWait()
+                self.waitQueue.put(ps, 1)
                 continue
-            strRsp = '%d %d %s %s' % (psHis.id, psHis.ps_status, psHis.bill_id, psHis.fail_reason)
-            rspFile = None
-            if 'file' in psHis.__dict__:
-                rspFile = ps.file.rspFile
+            psHis1 = psHis[0]
+            strRsp = '%d %d %s %s' % (psHis1.id, psHis1.ps_status, psHis1.bill_id, psHis1.fail_reason)
+            psRspFile = None
+            if 'file' in ps.__dict__:
+                psRspFile = ps.file.rspFile
             else:
-                rspFile = self.builder.cmdRsp
-            rspFile.saveRsp(strRsp)
-            if rspFile.rspTotal == rspFile.rspDone:
-                logger.info('rspfile %s completed,', rspFile.rspFile)
-                rspFile.back()
+                psRspFile = self.builder.cmdRsp
+            psRspFile.saveRsp(strRsp)
+            if psRspFile.rspTotal == psRspFile.rspDone:
+                logger.info('rspfile %s completed,', psRspFile.rspFile)
+                psRspFile.back()
 
-            time.sleep(1)
+            # time.sleep(1)
+        if not self.waitQueue.empty():
+            self.doWait()
         logger.info('all completed.')
+
+    def doWait(self):
+        while not self.waitQueue.empty():
+            ps = self.waitQueue.get(1)
+            regionCode = ps.region_code
+            createDate = ps.create_date
+            tableMon = createDate.strftime('%Y%m')
+            tableName = 'ps_provision_his_%s_%s' % (regionCode, tableMon)
+            Ps = ModelFac(tableName, PsBas)
+            psHis = Ps.objects.filter(id=ps.id)
+            if len(psHis) == 0:
+                strRsp = '%d %d %s %s' % (ps.id, -2, ps.bill_id, 'time out')
+            else:
+                psHis1 = psHis[0]
+                strRsp = '%d %d %s %s' % (psHis1.id, psHis1.ps_status, psHis1.bill_id, psHis1.fail_reason)
+            psRspFile = None
+            if 'file' in ps.__dict__:
+                psRspFile = ps.file.rspFile
+            else:
+                psRspFile = self.builder.cmdRsp
+            psRspFile.saveRsp(strRsp)
+            if psRspFile.rspTotal == psRspFile.rspDone:
+                logger.info('rspfile %s completed,', psRspFile.rspFile)
+                psRspFile.back()
 
     def makeRsp(self, order):
         inFile = order.file
@@ -475,10 +535,10 @@ class Director(object):
     def start(self):
         self.makeBuilder()
         self.builder.loadCmd()
-        if self.builder.inFile is not None:
+        # if self.builder.inFile is not None:
             # print(self.factory.inFile)
-            logger.info('find in files')
-            self.builder.findFile()
+        logger.info('find in files')
+        self.builder.findFile()
         self.builder.loadNumberArea()
         self.builder.buildQueue()
         sender = self.builder.buildKtSender()
